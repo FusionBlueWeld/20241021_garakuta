@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit, least_squares
 
 # CSVファイルのロード
 file_path = "/mnt/data/シミュレーション波形2.csv"
@@ -14,6 +14,7 @@ x_12 = 0.0
 x_23 = 0.05  
 x_34 = 0.6  
 x_45 = 9.0  
+x_56 = 18.5
 
 # 領域1: F(x) = 0
 region1_x = np.linspace(x_start, x_12, 100)
@@ -61,6 +62,15 @@ K_hardening_fitted, n_hardening_fitted = popt
 region4_x = np.linspace(x_34, x_45, 100)
 region4_y_fitted = plastic_hardening_model(region4_x, K_hardening_fitted, n_hardening_fitted)
 
+# 領域5: 初期値でのプロット
+K_start_init, K_end_init, a_start_init, a_end_init = 1e7, 1e6, 1e-5, 5e-5
+Y_init = 15000
+
+region5_x = np.linspace(x_45, x_56, 100)
+K_x_init = np.linspace(K_start_init, K_end_init, len(region5_x))
+a_x_init = np.maximum(np.linspace(a_start_init, a_end_init, len(region5_x)), 1e-8)
+region5_y_init = (K_x_init * np.sqrt(np.pi * a_x_init)) / Y_init + region4_y_fitted[-1]
+
 # グラフの描画
 plt.figure(figsize=(12, 6))
 
@@ -69,15 +79,16 @@ plt.plot(region1_x, region1_y, label='Region 1: F(x) = 0', linestyle='--', color
 plt.plot(region2_x, region2_y_fitted, label='Region 2: Hertz Contact (Fitted)', linestyle='--', color='green')
 plt.plot(region3_x, region3_y_fitted, label='Region 3: Hooke\'s Law (Fitted)', linestyle='--', color='blue')
 plt.plot(region4_x, region4_y_fitted, label='Region 4: Plastic Hardening (Fitted)', linestyle='--', color='purple')
+plt.plot(region5_x, region5_y_init, label='Region 5 (Initial Values)', linestyle='--', color='orange')
 
 plt.xlabel('Displacement (µm)')
 plt.ylabel('Load Force / Punch Circumference (N/mm)')
-plt.title('CSV Data with Regions 1 to 4 (Fitted) Overlay')
+plt.title('CSV Data with Regions 1 to 5 (Initial Values for Region 5) Overlay')
 plt.legend()
 plt.grid(True)
 plt.show()
 
-# フィットされたパラメータの出力
+# 各フィッティング結果の出力
 print(f"E* (Fitted): {E_star_fitted}")
 print(f"k (Fitted): {k_fitted}")
 print(f"K_hardening (Fitted): {K_hardening_fitted}")
