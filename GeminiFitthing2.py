@@ -1,4 +1,3 @@
-!pip install japanize_matplotlib
 import pandas as pd
 import japanize_matplotlib
 import matplotlib.pyplot as plt
@@ -40,6 +39,7 @@ def plastic_func_with_offset(x, a, b, offset):
 all_x_fit = []
 all_y_fit = []
 all_labels=[]
+all_r2=[]
 
 # 弾性領域のフィッティング処理
 fitting_points = 20 #初期値
@@ -70,7 +70,7 @@ for i in range(1000): #安全のためイテレーション回数を制限
     # R2値を計算
     r2 = r2_score(fit_y, y_fit)
     history_r2.append(r2)
-    print(f"弾性領域：{fitting_points} points fitting ,R2:{r2:.4f}")
+    
 
     # フィット率が悪化した場合の処理
     if r2 < best_r2:
@@ -99,12 +99,16 @@ elastic_end_index = rising_index + fitting_points - 5
 all_x_fit.append(best_x_fit)
 all_y_fit.append(best_y_fit)
 all_labels.append(f'Elastic Fit (k={best_k:.2f})')
-
+all_r2.append(best_r2)
 
 # 塑性領域のフィッティングを繰り返す
 current_start_index = elastic_end_index #初期値
 plastic_region_count = 1 #塑性領域の繰り返し回数
 while True: #塑性領域のフィッティングを繰り返す
+    # current_start_indexがy_meanのサイズを超えていないかチェック
+    if current_start_index >= len(y_mean):
+        print(f"塑性領域：フィッティング可能な範囲を超えたため、フィッティングを終了します")
+        break
     plastic_fitting_points = 10 #初期値
     best_plastic_r2 = -np.inf
     best_a = None
@@ -119,8 +123,14 @@ while True: #塑性領域のフィッティングを繰り返す
     for i in range(1000): #安全のためイテレーション回数を制限
         plastic_fit_x = x_mean[current_start_index:current_start_index + plastic_fitting_points]
         plastic_fit_y = y_mean[current_start_index:current_start_index + plastic_fitting_points]
-        # 塑性領域の開始点のY軸の値
-        offset = y_mean[current_start_index]
+        
+        # offsetの取得前にcurrent_start_indexの範囲チェック
+        if current_start_index < len(y_mean):
+          # 塑性領域の開始点のY軸の値
+            offset = y_mean[current_start_index]
+        else :
+          print("塑性領域：current_start_indexが範囲外のため、offsetの取得をスキップします")
+          break
 
         # フィッティング実行
         try:
@@ -137,7 +147,7 @@ while True: #塑性領域のフィッティングを繰り返す
         # R2値を計算
         plastic_r2 = r2_score(plastic_fit_y, plastic_y_fit)
         plastic_history_r2.append(plastic_r2)
-        print(f"塑性領域{plastic_region_count}：{plastic_fitting_points} points fitting ,R2:{plastic_r2:.4f}")
+
 
         # フィット率が悪化した場合の処理
         if plastic_r2 < best_plastic_r2:
@@ -156,25 +166,30 @@ while True: #塑性領域のフィッティングを繰り返す
             plastic_bad_fit_count = 0  # リセット
         
         #最大値を超えた場合は終了
-        if current_start_index + plastic_fitting_points >= len(x_mean) or any(y > max_y for y in plastic_fit_y):
+        if any(y > max_y for y in plastic_fit_y):
           print(f"塑性領域{plastic_region_count}：最大Y値に到達したため、フィッティングを終了します")
           break
+        
+        # 全体のデータ範囲を超えた場合は、終了する
+        if current_start_index + plastic_fitting_points >= len(x_mean):
+            print(f"塑性領域{plastic_region_count}：フィッティング可能な範囲を超えたため、フィッティングを終了します")
+            break
+
         plastic_fitting_points += 1
+
     
     #塑性領域の最終結果をリストに追加
     if best_a is not None:
       all_x_fit.append(best_plastic_x_fit)
       all_y_fit.append(best_plastic_y_fit)
       all_labels.append(f'Plastic Fit (a={best_a:.2f}, b={best_b:.2f}, offset={best_offset:.2f})')
+      all_r2.append(best_plastic_r2)
       current_start_index = current_start_index + plastic_fitting_points-5 #次の開始点を更新
       plastic_region_count+=1 #塑性領域のカウントを更新
     else:
       break # フィッティング結果がなかった場合は、ループを終了
 
-    # 全体のデータ範囲を超えた場合は、終了する
-    if current_start_index >= len(x_mean) :
-      print(f"塑性領域：フィッティング可能な範囲を超えたため、フィッティングを終了します")
-      break
+
 # グラフの描画
 plt.figure(figsize=(12, 7))
 plt.plot(x_mean, y_mean, label='Average Load')
@@ -193,6 +208,6 @@ print(f"弾性領域の最終的な傾きk = {best_k:.2f}")
 print(f"弾性領域の最終的なR2値 = {best_r2:.4f}")
 
 for i in range(1, len(all_x_fit)):
-  if len(all_x_fit[i]) > 0:
+  if len(all_x_fit[i]) > 0 and len(all_r2) > i:
     print(f"塑性領域{i}の最終的なパラメータ:{all_labels[i]}")
-    print(f"塑性領域{i}の最終的なR2値 = {plastic_history_r2[i-1]:.4f}")
+    print(f"塑性領域{i}の最終的なR2値 = {all_r2[i]:.4f}")
