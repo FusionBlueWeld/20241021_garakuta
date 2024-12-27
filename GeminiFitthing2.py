@@ -21,6 +21,7 @@ y_mean = df_grouped['Load force / punch circumference (N/mm)'].values
 
 # グラフ全体の最大Y値を取得
 max_y = np.max(y_mean)
+print(max_y)
 
 # 立ち上がり位置の検出
 first_y = y_mean[0]
