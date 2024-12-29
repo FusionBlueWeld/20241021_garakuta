@@ -41,10 +41,19 @@ def calculate_region4(x, F_prev):
     return A_cross_section * K_hardening * (x_region4 / x_34)**n_hardening + F_prev
 
 # 関数定義：領域5 (応力拡大係数)
-def calculate_region5(x, F_prev):
+def calculate_region5_rev1(x, F_prev):
     x_region5 = x - x_45
     K_x = np.linspace(1e7, 1e6, len(x_region5))
     a_x = np.linspace(1e-5, 5e-5, len(x_region5))
+    return (K_x * np.sqrt(np.pi * a_x)) / Y + F_prev
+
+def calculate_region5(x, F_prev):
+    x_region5 = x - x_45
+    K_x = np.linspace(1e7, 1e6, len(x_region5))
+    # 非線形なき裂成長モデル（べき乗則）
+    n = 2  # べき乗の指数
+    a_x = 1e-5 * (x_region5**n) 
+
     return (K_x * np.sqrt(np.pi * a_x)) / Y + F_prev
 
 # 関数定義：領域6 (エネルギー解放)
