@@ -1,18 +1,43 @@
 
+
 データ処理Webアプリを作りたい
 
 ベースのフォルダ構成
-（生成するコードの特性に応じて、ファイル分割やフォルダ分けを行う）
-│  main.py
-│  SampleData_Creator.py
-│  json
+M-I-E-R-I-O/  # ◀ プロジェクトのルートフォルダ
+├── app/                  # ◀ Flaskアプリケーションの本体
+│   ├── __init__.py         # Flaskアプリの初期化処理（Application Factory）
+│   ├── routes.py           # URLのルーティング（例: @app.route）をここに集約
+│   ├── data_processor.py   # CSVの読み込み、フィルタリング、データ抽出などの処理
+│   ├── model_handler.py    # Tensorflowモデルの構築、学習、ファインチューニング処理
+│   ├── settings_manager.py # FITTING/FUNCTIONタブのJSONファイルの読み書き、関数検証処理
+│   │
+│   ├── static/             # ◀ CSS, JavaScript, 画像などの静的ファイルを格納
+│   │   ├── css/
+│   │   │   └── style.css   # モダンなUIを実現するためのスタイルシート
+│   │   ├── js/
+│   │   │   ├── main.js     # 全ページ共通の処理（UIの初期化など）
+│   │   │   ├── view.js     # 「VIEW」タブの動的処理（Plotly描画、フォーム連携）
+│   │   │   ├── fitting.js  # 「FITTING」タブの動的処理（表の生成、APPLYボタン）
+│   │   │   └── function.js # 「FUNCTION」タブの動的処理（行の追加/削除、APPLYボタン）
+│   │   └── images/         # ロゴやアイコンなど
+│   │
+│   └── templates/          # ◀ HTMLテンプレート
+│       └── index.html      # 全ての機能を持つメインページ
 │
-├─data
-│      Feature.csv
-│      Target.csv
+├── data/                 # ◀ デフォルトで提供するサンプルデータ
+│   ├── Feature.csv
+│   └── Target.csv
 │
-└─templates
-        index.html
+├── user_data/            # ◀ ユーザーが生成したデータを保存する場所 (※Git管理外)
+│   ├── uploads/            # ユーザーがアップロードしたCSVファイルの一時保存場所
+│   └── settings/           # FITTING/FUNCTIONで保存したJSONファイルの保存場所 (旧jsonフォルダ)
+│
+├── scripts/              # ◀ アプリ本体とは独立した補助スクリプト
+│   └── sample_data_creator.py # ここに移動
+│
+├── run.py                # ◀ Flaskアプリケーションを起動するためのスクリプト
+├── config.py             # アプリケーションの設定ファイル (SECRET_KEYなど)
+└── requirements.txt      # 必要なPythonライブラリ一覧 (Flask, Tensorflow, pandasなど)
 
 
 # ★SampleData_Creator.pyの役割
@@ -169,6 +194,11 @@ print(" - Target.csv")
 ある程度レスポンシブデザインを考慮する
 WebUIのタイトルは「M-I-E-R-I-O」とする
 
+# 技術スタック
+サーバーサイドはpythonのflaskを使用する
+フロントエンドはHTML、CSS、JavaScriptでゴリゴリ書く
+機械学習に使用するフレームワークはTensorflowとする
+
 # メインページの仕様
 タイトルの下に
 Feature：「テキストボックス」「ファイルボタン」
@@ -280,7 +310,7 @@ jsonファイルは、jsonフォルダ内に保存される
 この時ロードしているFeatureCSVファイルとTargetCSVファイルのパスも保存しておく
 （どのファイルがロードされた時の設定なのかを紐づけるため）
 
-このjsonファイルは「json/{FITTING}_yyyymmddHHMMSS.json」で保存され、履歴が残るようにする
+このjsonファイルは「settings/{FITTING}_yyyymmddHHMMSS.json」で保存され、履歴が残るようにする
 
 ２．
 １．のjsonファイル保存を実行したとき、下記の条件が満たされていれば、続きの処理が実行される
@@ -399,7 +429,7 @@ Target parameter欄で、Z_depthというparameterを選択しているとき、
 jsonファイルは、jsonフォルダ内に保存される
 この時ロードしているFeatureCSVファイルとTargetCSVファイルのパスも保存しておく
 （どのファイルがロードされた時の関数なのかを紐づけるため）
-このjsonファイルは「json/{FUNCTION}_yyyymmddHHMMSS.json」で保存され、履歴が残るようにする
+このjsonファイルは「settings/{FUNCTION}_yyyymmddHHMMSS.json」で保存され、履歴が残るようにする
 
 FUNCTIONタブで設定した関数が、FITTINGタブの関数を選択ドロップダウンボックスに選択肢として現れる
 
@@ -422,4 +452,144 @@ Func_X3_Zwidth	p^exponent	exponent=0.4
 SampleData_Creator.pyで生成されたテストデータ（Feature.csv、Target.csv）を用いて、このアプリの機能のデバッグを行う
 
 
-ここまで作って、操作ができるようにしてください
+開発の現実的なステップとテスト仕様
+下記の開発ステップに沿って、コードを作成し、各マイルストーンとなるステップでテストコードも実装し、デバッグを行う。テストをパスしたとき、次の開発ステップへ遷移する。
+
+
+【ステップ1】 アプリケーションの骨格構築とサーバー起動
+目標: まずはWebアプリとして最低限の形を作り、ブラウザに画面を表示させる。
+* 開発内容:
+    1. 提案されたフォルダ構成を作成する。
+    2. requirements.txtにFlask, pandas, numpyを記述し、仮想環境にインストールする。
+    3. run.pyを作成し、Flaskアプリケーションを起動するコードを記述する。
+    4. app/__init__.pyでFlaskのApplication Factoryパターンを用いてアプリのインスタンスを生成する。
+    5. app/routes.pyにルートURL(/)に対するルートを定義し、index.htmlをレンダリングする。
+    6. app/templates/index.htmlに、タイトル「M-I-E-R-I-O」と、3つのタブ（VIEW, FITTING, FUNCTION）の骨格をHTMLで作成する。
+    7. scripts/sample_data_creator.pyを実行し、dataフォルダにFeature.csvとTarget.csvを生成しておく。
+* テスト仕様:
+    * python run.pyコマンドでエラーなくWebサーバーが起動すること。
+    * ブラウザで http://127.0.0.1:5000 にアクセスし、「M-I-E-R-I-O」というタイトルと3つのタブが表示されること。
+    * dataフォルダ内に、Feature.csvとTarget.csvが存在すること。
+
+【ステップ2】 CSVファイルのアップロードと静的なグラフ表示
+目標: ユーザーがCSVファイルを指定し、そのデータに基づいた基本的な3D散布図を表示できるようにする。
+* 開発内容:
+    1. フロントエンド (:
+        * VIEWタブ内に、Feature/Targetのファイル選択ボタンとテキストボックスを配置する。
+        * ファイルを選択すると、ファイル名がテキストボックスに表示されるJavaScriptを実装する。
+        * Plotly.jsライブラリをindex.htmlに読み込ませる。
+        * グラフ描画用の<div id="plot-area"></div>を配置する。
+    2. バックエンド (:
+        * ファイルアップロードを受け付けるエンドポイント(API)をroutes.pyに作成（例: /api/upload）。
+        * アップロードされたCSVファイルをuser_data/uploads/に保存し、Pandasで読み込む。
+        * 読み込んだデータをJSON形式でフロントエンドに返す処理をdata_processor.pyに実装する。
+    3. 連携 (:
+        * ファイルが選択されたら、Ajax（Fetch API）でバックエンドにファイルを送信し、返ってきたデータを使ってPlotlyの3D散布図を描画する。
+        * この段階では軸は固定でOK（例: X軸はFeatureの1列目、Y軸は2列目、Z軸(色)はTargetの1列目）。
+* テスト仕様:
+    * VIEWタブの「ファイルボタン」でFeature.csvとTarget.csvを選択できること。
+    * ファイルを選択すると、テキストボックスにそれぞれのファイル名が表示されること。
+    * 両方のファイルを選択後、plot-areaにPlotlyの3D散布図が表示されること。
+    * user_data/uploadsフォルダにアップロードしたCSVファイルが保存されていること。
+
+【ステップ3】 インタラクティブなグラフ操作機能
+目標: ユーザーが自由に軸を選択し、データをフィルタリングしてグラフを動的に変更できるようにする。
+* 開発内容:
+    1. フロントエンド (:
+        * CSV読み込み成功後、ヘッダー名（main_idを除く）を使ってVIEWタブのパラメータ選択フォーム（ドロップダウン等）を動的に生成する。
+        * ドロップダウン（Constant, X_axis, Y_axis）の選択肢と、Constant用の値入力欄を実装する。
+        * フォームの選択内容が変更されるたびに、グラフを再描画するイベントリスナーを実装する。
+        * X_axisとY_axisが重複しないように制御するロジックを追加する。
+        * Constantが指定された場合、表示するデータをJavaScript上でフィルタリングする。
+        * 必須項目（X/Y軸、Target）が全て設定されるまでグラフを表示しないようにする。
+* テスト仕様:
+    * Feature.csv読み込み後、パラメータ欄にX1_speed, X2_height, X3_powerが表示されること。
+    * X1_speedをX_axis、X2_heightをY_axis、TargetをZ_depthに選択すると、対応するグラフが表示されること。
+    * X3_powerをX_axisに変更すると、X1_speedの選択がX_axisでなくなる（例: Constantに戻る）こと。
+    * X3_powerをConstant、値を3000に設定すると、P_flat=3000のデータ点のみでグラフが再描画されること。
+    * 必須項目を一つでも未選択にすると、グラフが消えること。
+
+【ステップ4】 「FUNCTION」タブと設定保存機能
+目標: ユーザーがカスタム関数を定義し、JSONファイルとして保存・読込できるようにする。
+* 開発内容:
+    1. フロントエンド (:
+        * FUNCTIONタブのUI（テーブル、+Add/-Delボタン、APPLY/LOADボタン）を実装する。
+        * +Add/-Delボタンで入力行を増減させる機能を実装する。
+        * sample_data_creator.pyで使われている関数をデフォルト値として表示する。
+    2. バックエンド (:
+        * APPLY時にテーブルの内容をJSONで受け取り、検証後、user_data/settings/{FUNCTION}_yyyymmddHHMMSS.jsonとして保存するAPI（例: /api/save_function）を実装する。
+        * 関数の表記ルール（例: a*x+b）をチェックするバリデーション機能をsettings_manager.pyに実装する。
+        * LOAD時に保存済みJSONファイルを読み込み、内容を返すAPIを実装する。
+* テスト仕様:
+    * FUNCTIONタブにデフォルト関数が表示されていること。
+    * +Addと-Delボタンが正しく動作すること。
+    * 関数を編集してAPPLYを押すと、user_data/settingsにタイムスタンプ付きのJSONファイルが生成されること。
+    * 不正な数式（例: a**x+）を入力してAPPLYを押すと、エラーメッセージが表示され、ファイルは保存されないこと。
+    * LOADボタンでJSONファイルを選択すると、テーブルの内容が復元されること。
+
+【ステップ5】 「FITTING」タブとモデル構築機能
+目標: FUNCTIONタブで定義した関数を使い、FeatureとTargetの関係を表現する数式モデルを組み立て、保存できるようにする。
+* 開発内容:
+    1. フロントエンド (:
+        * FITTINGタブのUI（テーブル、トグルスイッチ、ボタン）を実装する。
+        * CSV読み込み後、ヘッダーを元に動的にテーブル（行:Feature, 列:Target）を生成する。
+        * 各セルのドロップダウンに、FUNCTIONタブで定義された関数名を動的にセットする（API経由で取得）。
+    2. バックエンド (:
+        * user_data/settingsから関数定義JSONを読み込み、関数名リストを返すAPI（例: /api/get_functions）を実装する。
+        * APPLY時にテーブルの状態をJSONで受け取り、{FITTING}_...jsonとして保存するAPIを実装する。
+* テスト仕様:
+    * CSV読み込み後、FITTINGタブのテーブルの行列に正しいヘッダー名が表示されること。
+    * 各セルのドロップダウンに、FUNCTIONタブで定義した関数名が表示されること。
+    * 全てのセルに関数を割り当てAPPLYを押すと、{FITTING}_...jsonファイルが保存されること。
+    * 一つでも未選択のセルがある状態でAPPLYを押しても、エラーが表示され、モデル構築処理（次のステップ）に進まないこと。
+
+【ステップ6】 モデルのオーバーラップ表示機能
+目標: FITTINGタブで構築した数式モデルの計算結果を、VIEWタブの実データグラフに重ねて可視化する。
+* 開発内容:
+    1. バックエンド (:
+        * モデルの計算結果（カラーマップ用の面データ）を返すAPI（例: /api/calculate_surface）を実装する。このAPIは、現在の軸設定・Constant値・FITTINGモデルの情報を受け取る。
+        * API内部では、FITTING/FUNCTIONのJSONを読み解き、数式を再構築し、指定された範囲のグリッドデータに対して値を計算する。
+    2. フロントエンド (:
+        * FITTINGタブでAPPLYが成功したら、「オーバーラップ」スイッチを有効化する。
+        * スイッチがONになったら、APIに計算をリクエストし、返ってきた面データをPlotlyのsurface（またはheatmap）として、既存の散布図に透明度35%で重ねて描画する。
+        * VIEWタブの軸設定などが変更されたら、再度APIを呼び出してオーバーラップ表示を更新する。
+* テスト仕様:
+    * FITTINGでAPPLYするまで、「オーバーラップ」スイッチが押せないこと。
+    * APPLY後、スイッチが押せるようになり、ONにすると半透明のカラーマップが散布図の下に表示されること。
+    * VIEWタブで軸やConstant値を変更すると、カラーマップも追従して更新されること。
+    * スイッチをOFFにするとカラーマップが消えること。
+
+【ステップ7】 機械学習と学習過程の可視化
+目標: FITTINGモデルを初期値としてNNモデルを学習させ、その過程と結果をVIEWタブで可視化する。
+* 開発内容:
+    1. バックエンド (:
+        * tensorflowをrequirements.txtに追加する。
+        * 学習を開始するAPI（例: /api/start_learning）と、進捗を返すAPI（例: /api/learning_progress）を実装する。学習は重い処理なので、非同期実行（例: CeleryやFlaskのバックグラウンドタスク）を検討する。
+        * model_handler.pyにNNモデルの構築、FITTINGモデルによる事前学習、実データによるファインチューニングのロジックを実装する。
+    2. フロントエンド (:
+        * オーバーラップ表示後、「LEARNING」ボタンを有効化する。
+        * ボタンクリックで学習開始APIを呼び出し、プログレスバーを表示する。
+        * setInterval等で定期的に進捗APIをポーリングし、プログレスバーとオーバーラップ表示のカラーマップを更新する。
+        * 学習完了後、「Complete!」表示とゲージバーの消去処理を実装する。
+* テスト仕様:
+    * 「LEARNING」ボタンが適切なタイミングで有効化されること。
+    * ボタンを押すとプログレスバーが表示され、進捗に合わせてバーが伸びること。
+    * 学習中にカラーマップが徐々に変化していく様子が確認できること。
+    * 学習完了後、「Complete!」が表示され、一定時間後に消えること。
+
+【ステップ8】 閾値表示とUI/UXの仕上げ
+目標: 閾値の可視化機能を追加し、アプリ全体のデザインと使いやすさを向上させる。
+* 開発内容:
+    1. フロントエンド (:
+        * 「thresholdボタン」とテキストボックスを実装し、適切なタイミングで有効化する。
+        * テキストボックスの値が変更されると、Plotlyの等高線機能(contour)を使い、カラーマップ上に黒の波線を描画・更新する。
+        * ボタンで線の表示/非表示を切り替える。
+    2. 全体:
+        * static/css/style.cssを本格的に記述し、モダンでフラットなデザインを適用する。
+        * Production I/O欄のUIを実装する。
+        * CSSのメディアクエリ等を使い、スマホなどの小さい画面でもレイアウトが崩れないようにレスポンシブ対応を行う。
+* テスト仕様:
+    * Threshold関連UIが適切なタイミングで有効化されること。
+    * テキストボックスに数値を入力すると、グラフ上に黒い波線が表示され、値の変更に追従すること。
+    * Thresholdボタンで線の表示/非表示が切り替えられること。
+    * PCとスマホ（ブラウザの開発者ツールでシミュレート）で表示し、著しいレイアウト崩れがないことを確認すること。
