@@ -1,0 +1,425 @@
+
+データ処理Webアプリを作りたい
+
+ベースのフォルダ構成
+（生成するコードの特性に応じて、ファイル分割やフォルダ分けを行う）
+│  main.py
+│  SampleData_Creator.py
+│  json
+│
+├─data
+│      Feature.csv
+│      Target.csv
+│
+└─templates
+        index.html
+
+
+# ★SampleData_Creator.pyの役割
+
+デバッグ用にサンプルデータを作成する（dataフォルダにFeature.csvとTarget.csv）
+そのデータを用いて、main.pyの動作を検証する
+
+作成するサンプルデータはレーザー溶接の加工条件（Feature）と加工結果（Target）のデータセットです
+デバッグ用としてレーザー加工を採用しているが、アプリの機能はレーザー加工だけではなく、同様のデータ構造でプレス加工や切削加工にも転用することを見込んでいる
+
+サンプルデータの加工条件（Feature）は、
+'X1_speed'：レーザー走査速度
+'X2_height'：レーザー焦点位置
+'X3_power'：レーザー出力
+
+加工結果（Target）は、
+'Z_depth'：溶け込み深さ
+'Z_width'：ビード幅
+
+下記がそのデータを生成するコード例です
+
+# SampleData_Creator.py
+
+import numpy as np
+import pandas as pd
+
+# --- 外乱・ノイズ設定 (ここを調整してデータの「生っぽさ」を変更できます) ---
+# 1. 中心位置のランダムオフセットの標準偏差
+center_offset_std_x = 10.0  # 走査速度方向のずれの大きさ
+center_offset_std_y = 0.2   # 焦点位置方向のずれの大きさ
+
+# 2. 形状の非対称性係数
+asymmetry_factor_y = 1.2    # 焦点がμ_yより大きい領域のsigmaを1.2倍する
+
+# 3. 全体的なノイズの大きさ (正規分布の標準偏差)
+noise_level_depth = 60.0    # 溶け込み深さのノイズの大きさ (最大値の約2%)
+noise_level_width = 8.0     # ビード幅のノイズの大きさ (最大値の約1.8%)
+
+# 4. 外れ値の発生確率と大きさ
+outlier_probability = 0.01  # 1%の確率で外れ値が発生
+outlier_magnitude_factor = 1.5 # 外れ値の大きさ（通常の最大値の1.5倍まで）
+
+# --- 入力変数の刻み量を指定 ---
+X1_speed_values = np.array([5, 10, 20, 50, 100, 200, 300, 400, 500, 600])
+X2_height_values = np.array([-6, -5, -4, -3, -2, -1.5, -1, -0.5, 0, 0.5, 1, 2, 3, 4, 5, 6])
+X3_power_values = np.array([500, 1000, 2000, 3000, 4000, 5000, 6000])
+
+def asymmetric_gaussian_y(y, A, mu_y, sigma_y_rise, sigma_y_fall):
+    """非対称なガウス分布のy項のみを計算する関数。"""
+    sigma_y = np.where(y < mu_y, sigma_y_rise, sigma_y_fall)
+    exponent = -(y - mu_y)**2 / (2 * sigma_y**2)
+    return A * np.exp(exponent)
+
+def calculate_bead_width(x, y, p):
+    """ビード幅を計算する関数。各パラメータの効果を乗算でモデル化。"""
+    A_width_scale = 8.5
+    effect_p = p**0.4
+    effect_x = np.exp(-x / 300) + 0.5
+    effect_y = 1 + 0.03 * y**2
+    return A_width_scale * effect_p * effect_x * effect_y
+
+# --- 基本パラメータと外乱の適用 ---
+max_depth = 3150
+mu_y_base = 0
+sigma_y_base = 3.0
+
+# 1. 中心をランダムにずらす
+mu_y_final = mu_y_base + np.random.normal(0, center_offset_std_y)
+
+# 2. 非対称なsigmaを計算
+sigma_y_rise, sigma_y_fall = sigma_y_base, sigma_y_base * asymmetry_factor_y
+
+print("--- 生成条件 ---")
+print(f"入力変数の組み合わせ数: {len(X1_speed_values)} (speed) x {len(X2_height_values)} (height) x {len(X3_power_values)} (power) = {len(X1_speed_values)*len(X2_height_values)*len(X3_power_values)} 点")
+print(f"焦点位置の中心(オフセット適用後): mu_y={mu_y_final:.2f}")
+print(f"Y方向の広がり(非対称): (rise={sigma_y_rise:.2f}, fall={sigma_y_fall:.2f})")
+
+# --- 全組み合わせのグリッドを生成 ---
+X, Y, P = np.meshgrid(X1_speed_values, X2_height_values, X3_power_values, indexing='ij')
+
+# グリッド座標を1次元配列にフラット化
+X_flat = X.flatten()
+Y_flat = Y.flatten()
+P_flat = P.flatten()
+
+# --- Z_depth (溶け込み深さ) の計算 ---
+# 1. 速度の効果: 指数関数で減衰
+effect_x = np.exp(-X_flat / 300) + 0.5
+
+# 2. 焦点位置による基本形状（0～1の範囲）を計算
+depth_shape = asymmetric_gaussian_y(
+    Y_flat, 1.0, mu_y_final, sigma_y_rise, sigma_y_fall
+)
+
+# 3. パワーの効果（0～1の範囲、飽和あり）を計算
+power_effect_depth = (P_flat / np.max(X3_power_values))**0.7
+
+# 最終的な溶け込み深さを計算
+Z_depth = max_depth * effect_x * depth_shape * power_effect_depth
+
+# --- Z_width (ビード幅) の計算 ---
+Z_width = calculate_bead_width(X_flat, Y_flat, P_flat)
+
+# --- 全体的なノイズの追加 ---
+Z_depth += np.random.normal(0, noise_level_depth, Z_depth.shape)
+Z_width += np.random.normal(0, noise_level_width, Z_width.shape)
+
+# --- 外れ値の追加 ---
+num_total_points = len(X_flat)
+num_outliers = 0
+for i in range(num_total_points):
+    if np.random.rand() < outlier_probability:
+        num_outliers += 1
+        # この点を外れ値にする
+        Z_depth[i] = max_depth * outlier_magnitude_factor * np.random.rand()
+        Z_width[i] = 455 * outlier_magnitude_factor * np.random.rand()
+
+if num_outliers > 0:
+    print(f"{num_outliers}個の外れ値を生成しました。")
+
+# --- クリッピングを除去 ---
+Z_depth_final = Z_depth
+Z_width_final = Z_width
+
+# --- CSVファイルに保存 ---
+main_ids = np.arange(num_total_points)
+
+df_features = pd.DataFrame({
+    'main_id': main_ids,
+    'X1_speed': X_flat,
+    'X2_height': Y_flat,
+    'X3_power': P_flat
+})
+df_targets = pd.DataFrame({
+    'main_id': main_ids,
+    'Z_depth': Z_depth_final,
+    'Z_width': Z_width_final
+})
+
+df_features.to_csv('Feature.csv', index=False)
+df_targets.to_csv('Target.csv', index=False, float_format='%.4f')
+
+print("\nCSVファイルが保存されました:")
+print(" - Feature.csv")
+print(" - Target.csv")
+
+
+★ 以降、main.pyで実行されるアプリ仕様
+
+# デザイン仕様
+
+モダンでフラットデザインなUIとする
+（背景は白っぽい色、ボタンなどオブジェクトの色ははっきりとした色を使用）
+ある程度レスポンシブデザインを考慮する
+WebUIのタイトルは「M-I-E-R-I-O」とする
+
+# メインページの仕様
+タイトルの下に
+Feature：「テキストボックス」「ファイルボタン」
+Target：「テキストボックス」「ファイルボタン」
+を配置する。
+
+ファイルボタンを押すとダイアログが開いて、CSVファイルを選択
+パスはパラメータとして保持するが、テキストボックスにはファイル名のみを表示する
+
+その下に
+Production I/O：
+という欄を作り、その欄の中に
+Ch1:「LEDボタン」
+Ch2:「LEDボタン」
+・・・
+Ch8:「LEDボタン」
+
+を配置する
+
+LEDボタンは等間隔に配置する
+LEDはデフォルト灰色であるが、ボタンを押すと緑色になる
+
+※Production I/O欄は発展機能のための前準備であり、この時点ではUIのみ作成する
+
+－－－－－
+
+その下には3つのタブを用意する
+
+タブの名前は「VIEW」「FITTING」「FUNCTION」
+
+「VIEW」タブの中には、Plotllyでグラフ表示するエリアを設ける
+読み込んだFeatureのCSVファイルからヘッダー名を縦に並べ、その横にはドロップダウンボックスを作成する
+
+ただし、FeatureのCSVのヘッダーから"main_id"のヘッダーだけは除外する
+
+例）
+Feature parameter
+# name value
+1 "X1_speed" 「ドロップダウンボックス」
+2 "X2_height" 「ドロップダウンボックス」
+・・・
+
+ドロップダウンボックスには、
+「Constant」「X_axis」「Y_axis」
+を選択できるようにし、「Constant」の場合、任意の値を入れられるようにする
+
+このドロップボックスで、どこかのヘッダーパラメータが「X_axis」、もしくは「Y_axis」を選んだ時、既にそれらが選ばれていたヘッダーのドロップダウンボックスから「X_axis」「Y_axis」の値は消去される（軸の選択が重複しないようにするため）
+
+「Constant」が選択されているときに、値の入力がなければ、グラフは表示されない
+すべてのパラメータで「Constant」「X_axis」「Y_axis」が入力されるまで、グラフが表示されない
+
+同様に、その横にTargetのCSVファイルのフォームも設置する
+例）
+Target parameter
+「ドロップダウンボックス」 のみ
+
+Targetはドロップダウンボックスの中に、TargetのCSVファイルのヘッダーの選択肢を入れる
+こちらも同様に、"main_id"のヘッダーは除去する
+こちらも、パラメータの選択がない時は、グラフは表示されない
+
+
+この下に、オーバーラップというラベルのついたトグルスイッチ（ON/OFF）、スイッチの横に「LEARNING」というボタンを設置する
+オーバーラップのトグルスイッチは、デフォルトOFFで、FITTINGタブからの関数情報が渡されていなければ、ONにできないようにする
+「LEARNING」ボタンは、このトグルスイッチがONにならないと押せないようにする（グレーにして無効化しておく）
+
+また、「LEARNING」ボタンの横に「thresholdボタン」「テキストボックス」を設置する
+thresholdボタン＋このテキストボックス、もトグルスイッチをONにしないと機能しないようにしておく
+
+その下に、plotllyのグラフを描く
+グラフはカラーマップのプロットを使った散布図
+カラーマップはjetとする
+
+軸設定として、Feature parameterのドロップダウンボックスのvalueが、
+X_axisのヘッダーのデータがX軸、
+Y_axisのヘッダーのデータがY軸、
+
+Target parameterのドロップダウンボックスで選択したヘッダーがZ軸（カラーマップ表示）となるようにする
+
+各軸の表示最大値と最小値は、入力されるデータに応じてフレキシブルに変更される
+
+Feature parameter、Target parameterが複数あり、上のフォームで選択を変えたとき、即時自動でグラフには反映される
+（もちろん、フォーム入力が消されれば、グラフも表示されなくなる）
+
+Feature parameterで「X_axis」「Yaxis」以外のヘッダーパラメータで、「Constant」となっていて任意の値が設定されているとき、そのヘッダー列からその値の行のみが抽出される
+この「Constant」の任意値設定が複数ある時、それはAND条件で抽出される
+
+－－－－－
+
+次に、「FITTING」タブについて
+
+タブの中の上の方に「LOAD」ボタンを設置し、以降の状態を保存したjsonファイルをロードできるようにする
+LOADボタンの横に「線形結合」「乗積」のトグルスイッチを設定する（デフォルトは「線形結合」）
+ダイアログが開いて、jsonフォルダが開き、以下で設定する{FITTING}の入ったファイルを抽出して、選択できるようにする
+
+ロードしたFeatureとTargetのCSVファイルのそれぞれのヘッダを、列と行に並べた表を作成する
+横方向の軸にはTargetヘッダーを並べ、
+縦方向の軸にはFeatureヘッダーを並べる
+
+その交差セルには、それぞれドロップダウンボックスを配置する
+ドロップダウンボックスにはガイド表示で「--関数を選択--」と書かれている
+
+ヘッダーの数が多く、表が大きくなる時は、タブの中でスクロールできるようにする
+
+この表の下に「APPLY」ボタンを設置する
+「APPLY」ボタンを押すと、下記2つの動作を実行
+１．
+この表で選択した関数の状態がjsonファイルで保存される
+jsonファイルは、jsonフォルダ内に保存される
+この時ロードしているFeatureCSVファイルとTargetCSVファイルのパスも保存しておく
+（どのファイルがロードされた時の設定なのかを紐づけるため）
+
+このjsonファイルは「json/{FITTING}_yyyymmddHHMMSS.json」で保存され、履歴が残るようにする
+
+２．
+１．のjsonファイル保存を実行したとき、下記の条件が満たされていれば、続きの処理が実行される
+
+この表のすべての欄が何らかの定義された関数が入力されているときのみ、下記が実行される
+Target変数の関数が作成される
+
+例えば、
+LOADボタン横のトグルスイッチが「線形結合」のとき、
+
+Target変数：T1、T2が設定されていて、
+Feature変数：F1、F2、F3が設定されていたとすると、
+
+T1=「F1のT1列設定関数」+「F2のT1列設定関数」+「F3のT1列設定関数」
+T2=「F1のT2列設定関数」+「F2のT2列設定関数」+「F3のT2列設定関数」
+（表におけるその列で設定した各関数に対応）
+
+もしトグルスイッチが「乗積」であれば、
+T1=「F1のT1列設定関数」*「F2のT1列設定関数」*「F3のT1列設定関数」
+T2=「F1のT2列設定関数」*「F2のT2列設定関数」*「F3のT2列設定関数」
+
+という形でTarget変数が表現される
+
+そして、このTarget変数の表現関数で計算された結果を、VIEWタブへ渡す
+
+※ここからは、Target変数の表現関数が渡された後のVIEWタブでの処理を示す
+
+オーバーラップのトグルスイッチを、ONにできるようになる
+オーバーラップスイッチがONになったら、
+
+Feature parameter欄とTarget parameter欄で設定された変数に沿って、plotlyで表示されている範囲のカラーマップを作成し、表示されてる散布図グラフに重ねて表示する
+（ただし、実データが上レイヤー、計算結果が下レイヤーで重ねる、また計算結果のカラーマップ透明度は35%とする）
+
+この時に、カラーマップが表示される範囲は、CSVデータが表示される範囲が優先される
+そのため、計算されたカラーマップのデータも、CSVデータとうまくオーバーラップする範囲以外は除去しておく（計算負荷軽減のため）
+
+これらのカラーマップは、Feature parameter、Target parameterのフォーム入力を変更すると、CSVデータの表示変更と合わせて、同じく即時変更される
+
+オーバーラップのスイッチをOFFにするとカラーマップは消える
+
+例えば、
+Feature parameterが、F1：X_axis、F2：Y_axis、F3：const（value=1000）、
+Target parameterが、T1を選択
+とするとき、
+
+渡されたT1の表現関数（T1=「F1のT1列設定関数」+「F2のT1列設定関数」+「F3のT1列設定関数」とする）に沿って、その時にグラフ表示される範囲で、
+（F1=X_axis,F2=Y_axis,F3=const, T1）の値が計算され、その結果がカラーマップとしてX軸にF1、Y軸にF2、強度T1としてグラフ内に重ねて表示される
+
+トグルスイッチがオンできるようになったら、その横の「LEARNING」ボタンが押せるようになる
+
+「LEARNING」ボタンを押すと下記の処理が実行される
+マルチパーセプトロンの3層の隠れ層を持つニューラルネットワークが、渡された表現関数のデータ値を学習する
+例えば、
+入力変数：F1,F2,F3
+出力変数（正解ラベル）：T1,T2
+として、機械学習を行う
+
+この時に、機械学習の精度がよくなる程度に、カラーマップとして使用される値の量を計算しておく
+
+次に、このモデルを保存しておき、実際のデータを使ってファインチューニングを行う
+
+使用するデータは、
+入力変数：Feature.csvのパラメータ
+出力変数（正解ラベル）：Target.csvのパラメータ
+
+ファインチューニングを行った最終的な学習結果を、同じようにカラーマップで表示する
+
+学習中、その下にゲージバーが現れて、学習の進捗を％で演出する表示を追加する
+計算値と実データの学習量を合わせて100%として、その学習過程を見えるようにする
+ゲージバーが100％になると「Complete！」という文字が、ゲージバーに出て、その後2秒経って、文字と一緒にゲージバーが消える
+
+学習中、その進捗がおよそ20%毎に、学習途中のカラーマップを計算し、学習の進行と共に、カラーマップが学習によって変化していく様子を表示する
+
+また、トグルスイッチがオンできるようになったら、「LEARNING」ボタンの横のthresholdボタン＋テキストボックス、が機能するようになる
+テキストボックスに入力した値は、カラーマップとして表示されているTarget parameterの値と対応する
+
+例えば、
+Target parameter欄で、Z_depthというparameterを選択しているとき、
+カラーマップにはZ_depthのカラーマップが表示されており、
+テキストボックスに入力された値となる座標をカラーマップ上で繋いで、黒の波線を引いて表示する
+この波線が、このアプリで分析する加工の、結果閾値（OK/NG）となる
+
+このthresholdボタンはこの破線の表示、非表示を制御する
+一度押すと緑色に点灯し、波線が表示される
+もう一度押すと、点灯が消え、波線も消える
+テキストボックスの値の変更はリアルタイムに反映され、値を変えるとすぐにグラフの波線位置も変更される
+
+－－－－－
+
+次に「FUNCTION」タブの設定
+
+ここも上の方に「LOAD」ボタンを付けておく
+タブの中の上の方に「LOAD」ボタンを設置し、以降の状態を保存したjsonファイルをロードする
+
+ダイアログが開いて、jsonフォルダが開き、以下で設定する{FUNCTION}の入ったファイルを抽出して、選択できるようにする
+# name equation parameters
+1 「テキストボックス」「テキストボックス」「テキストボックス」
+
+という表示をデフォルトにする 
+その上に「+Add」「-Del」というボタンも設置しておき、入力関数の行を増やしたり減らしたりできる
+
+例えば、
+# name equation parameters
+1 関数1 a*x+b a=1, b=3
+という入力になる
+
+複雑な関数となるとき、その表記ルールも設計してください
+
+同様に、このタブの下に「APPLY」ボタンを付けておき、
+１．
+「APPLY」ボタンが押されたとき、記入された関数が表記ルールに沿っているかどうかをチェックする機能も実装して
+表記ルールから外れた場合、エラーでAPPLY実行できないようにする
+
+２．
+「APPLY」ボタンを押すとこの表で選択した関数の状態がjsonファイルで保存される
+jsonファイルは、jsonフォルダ内に保存される
+この時ロードしているFeatureCSVファイルとTargetCSVファイルのパスも保存しておく
+（どのファイルがロードされた時の関数なのかを紐づけるため）
+このjsonファイルは「json/{FUNCTION}_yyyymmddHHMMSS.json」で保存され、履歴が残るようにする
+
+FUNCTIONタブで設定した関数が、FITTINGタブの関数を選択ドロップダウンボックスに選択肢として現れる
+
+SampleData_Creator.pyで、各種データ生成に用いた関数は予めデフォルト関数として登録しておく
+関数名	式	パラメータ
+Func_X1_Zdepth	exp(-x / scale) + offset	scale=300, offset=0.5
+Func_X2_Zdepth	A * exp(-(y - mu_y)^2 / (2 * sigma_y^2))	A=1.0, mu_y=mu_y_final, sigma_y_rise=3.0, sigma_y_fall=3.0 * 1.2
+Func_X3_Zdepth	(p / max_power)^exponent	max_power=6000, exponent=0.7
+Func_X1_Zwidth	exp(-x / scale) + offset	scale=300, offset=0.5
+Func_X2_Zwidth	1 + coefficient * y^2	coefficient=0.03
+Func_X3_Zwidth	p^exponent	exponent=0.4
+
+－－－－－
+
+# 全体を通した指示
+処理はできるだけフロントエンドで実行し、
+計算が重たい、またはファイル保存など永続的な記録が必要になる場合はバックエンドのPythonで処理を行うようにする
+コード内のコメントは日本語で記載して
+
+SampleData_Creator.pyで生成されたテストデータ（Feature.csv、Target.csv）を用いて、このアプリの機能のデバッグを行う
+
+
+ここまで作って、操作ができるようにしてください
