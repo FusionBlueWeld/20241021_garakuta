@@ -520,3 +520,235 @@ SampleData_Creator.pyで、各種データ生成に用いた関数は予めデ�
 - **テスト項目**:
     - `README.md` に概要、使用方法、インストール手順が記載されていることを確認。
     - コード内のコメントが日本語で適切に記載されていることを確認。
+
+このアプリに必要なライブラリ一覧
+requirements.txt
+```text
+Flask
+Tensorflow
+pandas
+plotly
+numpy
+```
+
+リポジトリ内に空ファイルを作成するコード
+requirements.txtだけは内容を記述する
+create_repo.py
+```python
+import os
+
+def create_project_structure(base_path="."):
+    """
+    M-I-E-R-I-Oプロジェクトのフォルダとファイルの空の構造を作成します。
+    """
+    project_name = "M-I-E-R-I-O"
+    project_root = os.path.join(base_path, project_name)
+
+    # 定義されたディレクトリとファイル (空のファイルは None で表現)
+    structure = {
+        "app": {
+            "__init__.py": None,
+            "routes.py": None,
+            "data_processor.py": None,
+            "model_handler.py": None,
+            "settings_manager.py": None,
+            "static": {
+                "css": {
+                    "style.css": None
+                },
+                "js": {
+                    "main.js": None,
+                    "view.js": None,
+                    "fitting.js": None,
+                    "function.js": None
+                },
+                "images": {} # imagesディレクトリは空のまま
+            },
+            "templates": {
+                "index.html": None
+            }
+        },
+        "data": {}, # dataディレクトリは空のまま (SampleData_Creator.pyで生成される)
+        "user_data": { # user_dataはGit管理外だが、構造は作成しておく
+            "uploads": {},
+            "settings": {}
+        },
+        "scripts": {
+            "sample_data_creator.py": None
+        },
+        "run.py": None,
+        "config.py": None,
+        "requirements.txt": None # requirements.txtもここで作成指示
+    }
+
+    print(f"プロジェクトルートディレクトリを作成中: {project_root}")
+    os.makedirs(project_root, exist_ok=True)
+
+    def create_items(current_path, items):
+        for name, content in items.items():
+            item_path = os.path.join(current_path, name)
+            if content is None:  # ファイルの場合
+                if not os.path.exists(item_path):
+                    with open(item_path, 'w', encoding='utf-8') as f:
+                        pass # 空のファイルを作成
+                    print(f"  ファイルを作成しました: {item_path}")
+                else:
+                    print(f"  ファイルは既に存在します: {item_path}")
+            elif isinstance(content, dict): # ディレクトリの場合
+                if not os.path.exists(item_path):
+                    os.makedirs(item_path, exist_ok=True)
+                    print(f"  ディレクトリを作成しました: {item_path}/")
+                else:
+                    print(f"  ディレクトリは既に存在します: {item_path}/")
+                create_items(item_path, content) # 再帰的に処理
+
+    create_items(project_root, structure)
+    print("\nプロジェクト構造の作成が完了しました。")
+
+    # requirements.txt の内容を書き込む
+    requirements_path = os.path.join(project_root, "requirements.txt")
+    requirements_content = """Flask
+Tensorflow
+pandas
+plotly
+numpy
+"""
+    try:
+        with open(requirements_path, 'w', encoding='utf-8') as f:
+            f.write(requirements_content.strip()) # 末尾の改行を削除
+        print(f"requirements.txt に内容を書き込みました: {requirements_path}")
+    except Exception as e:
+        print(f"requirements.txt の書き込み中にエラーが発生しました: {e}")
+
+
+if __name__ == "__main__":
+    # このスクリプトを実行するディレクトリの相対パスでプロジェクトを作成
+    create_project_structure()
+```
+
+ステップ2の処理に必要なコードを、適切なファイルに記述するコード
+populate_step2.py
+```python
+import os
+
+def populate_step2_code(project_root="M-I-E-R-I-O"):
+    """
+    ステップ2「Flaskアプリケーションの基本設定」に必要なコードを適切なファイルに記述します。
+    ファイルが存在しない場合は作成します（通常はcreate_repo.pyで既に作成済み）。
+    """
+    print(f"--- ステップ2のコードをファイルに記述中 ({project_root}) ---")
+
+    # 1. config.py の内容
+    config_path = os.path.join(project_root, "config.py")
+    config_content = """
+import os
+
+class Config:
+    SECRET_KEY = os.environ.get('SECRET_KEY') or 'your-very-secret-key-please-change-this'
+    # その他の設定（例: データベースURIなど）があればここに追加
+"""
+    try:
+        with open(config_path, 'w', encoding='utf-8') as f:
+            f.write(config_content.strip() + "\n")
+        print(f"  config.py に内容を書き込みました: {config_path}")
+    except Exception as e:
+        print(f"  config.py の書き込み中にエラーが発生しました: {e}")
+
+    # 2. app/__init__.py の内容 (Application Factory)
+    app_init_path = os.path.join(project_root, "app", "__init__.py")
+    app_init_content = """
+from flask import Flask
+from config import Config # config.py から Config クラスをインポート
+
+def create_app():
+    app = Flask(__name__)
+    app.config.from_object(Config) # Configオブジェクトから設定をロード
+
+    # routes.py で定義されたルートを登録
+    from app import routes
+    app.register_blueprint(routes.bp) # Blueprintとして登録
+
+    return app
+"""
+    try:
+        with open(app_init_path, 'w', encoding='utf-8') as f:
+            f.write(app_init_content.strip() + "\n")
+        print(f"  app/__init__.py に内容を書き込みました: {app_init_path}")
+    except Exception as e:
+        print(f"  app/__init__.py の書き込み中にエラーが発生しました: {e}")
+
+    # 3. app/routes.py の内容
+    app_routes_path = os.path.join(project_root, "app", "routes.py")
+    app_routes_content = """
+from flask import Blueprint, render_template
+
+# Blueprintを作成
+bp = Blueprint('main', __name__)
+
+@bp.route('/')
+def index():
+    # index.html テンプレートをレンダリングして返す
+    return render_template('index.html')
+
+# 他のルートは後でここに追加
+"""
+    try:
+        with open(app_routes_path, 'w', encoding='utf-8') as f:
+            f.write(app_routes_content.strip() + "\n")
+        print(f"  app/routes.py に内容を書き込みました: {app_routes_path}")
+    except Exception as e:
+        print(f"  app/routes.py の書き込み中にエラーが発生しました: {e}")
+
+    # 4. run.py の内容
+    run_path = os.path.join(project_root, "run.py")
+    run_content = """
+from app import create_app
+
+# Flaskアプリケーションインスタンスを作成
+app = create_app()
+
+if __name__ == '__main__':
+    # アプリケーションをデバッグモードで実行
+    # 本番環境では使用しない
+    app.run(debug=True)
+"""
+    try:
+        with open(run_path, 'w', encoding='utf-8') as f:
+            f.write(run_content.strip() + "\n")
+        print(f"  run.py に内容を書き込みました: {run_path}")
+    except Exception as e:
+        print(f"  run.py の書き込み中にエラーが発生しました: {e}")
+
+    # 5. app/templates/index.html の内容 (最小限のHTML)
+    index_html_path = os.path.join(project_root, "app", "templates", "index.html")
+    index_html_content = """
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M-I-E-R-I-O</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <h1>M-I-E-R-I-O Web Application</h1>
+    <p>Flaskアプリケーションの基本設定が完了しました！</p>
+    <!-- 後でここにUI要素を追加 -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
+"""
+    try:
+        with open(index_html_path, 'w', encoding='utf-8') as f:
+            f.write(index_html_content.strip() + "\n")
+        print(f"  app/templates/index.html に内容を書き込みました: {index_html_path}")
+    except Exception as e:
+        print(f"  app/templates/index.html の書き込み中にエラーが発生しました: {e}")
+
+    print("\n--- ステップ2のコード記述が完了しました ---")
+
+if __name__ == "__main__":
+    # このスクリプトを実行する前に、create_repo.pyでプロジェクト構造が作成されている必要があります。
+    populate_step2_code()
+```
+
