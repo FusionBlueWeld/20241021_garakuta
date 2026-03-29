@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Layered Knowledge Graph</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#060a12;color:#e2e8f4;font-family:'SF Pro Display',-apple-system,'Helvetica Neue',sans-serif;height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+#canvas-container{flex:1;position:relative;cursor:grab;}
+#canvas-container:active{cursor:grabbing;}
+canvas{display:block;}
+
+#hud-top{position:absolute;top:18px;left:50%;transform:translateX(-50%);font-size:11px;color:rgba(160,180,220,0.35);letter-spacing:.14em;text-transform:uppercase;pointer-events:none;white-space:nowrap;}
+#status-line{position:absolute;top:18px;left:18px;font-size:11px;color:rgba(80,200,120,0.65);letter-spacing:.06em;pointer-events:none;display:flex;align-items:center;gap:6px;}
+.pulse{width:6px;height:6px;border-radius:50%;background:rgba(80,200,120,0.9);animation:pulse 2s infinite;flex-shrink:0;}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.4;transform:scale(.6);}}
+
+/* Layer legend */
+#layer-legend{position:absolute;bottom:18px;left:18px;pointer-events:none;display:flex;flex-direction:column;gap:5px;}
+.legend-item{display:flex;align-items:center;gap:8px;font-size:11px;color:rgba(180,200,240,0.55);}
+.legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+
+/* Controls hint */
+#controls-hint{position:absolute;bottom:18px;right:18px;font-size:11px;color:rgba(160,180,220,0.28);line-height:1.9;pointer-events:none;text-align:right;}
+
+/* Tooltip */
+#node-tooltip{position:absolute;display:none;pointer-events:none;z-index:10;}
+.tooltip-card{background:rgba(8,14,26,0.95);border:1px solid rgba(80,140,255,0.25);border-radius:10px;padding:12px 16px;min-width:190px;max-width:250px;}
+.tooltip-layer{font-size:9px;text-transform:uppercase;letter-spacing:.12em;margin-bottom:3px;font-weight:500;}
+.tooltip-type{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:rgba(120,160,255,0.6);margin-bottom:4px;}
+.tooltip-label{font-size:14px;font-weight:600;color:#c8d8ff;margin-bottom:6px;}
+.tooltip-desc{font-size:12px;color:rgba(180,200,240,0.68);line-height:1.5;}
+.tooltip-score{margin-top:9px;display:flex;align-items:center;gap:7px;}
+.score-bar-wrap{flex:1;height:3px;background:rgba(255,255,255,0.08);border-radius:2px;}
+.score-bar{height:100%;border-radius:2px;background:linear-gradient(90deg,#2060ff,#40c0ff);}
+.score-num{font-size:10px;color:rgba(100,160,255,0.8);min-width:28px;text-align:right;}
+
+/* Hamburger */
+#hamburger{position:absolute;top:14px;right:14px;z-index:20;width:36px;height:36px;border:1px solid rgba(80,120,255,0.22);border-radius:8px;background:rgba(8,14,26,0.88);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;transition:border-color .2s;}
+#hamburger:hover{border-color:rgba(80,140,255,0.5);}
+#hamburger span{display:block;width:16px;height:1.5px;background:rgba(180,200,255,0.7);border-radius:1px;transition:all .25s;}
+#hamburger.open span:nth-child(1){transform:translateY(6.5px) rotate(45deg);}
+#hamburger.open span:nth-child(2){opacity:0;transform:scaleX(0);}
+#hamburger.open span:nth-child(3){transform:translateY(-6.5px) rotate(-45deg);}
+
+/* Side Panel */
+#side-panel{position:absolute;top:0;right:0;height:100%;width:278px;background:rgba(6,10,20,0.97);border-left:1px solid rgba(60,90,160,0.18);transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,.2,1);z-index:15;display:flex;flex-direction:column;overflow:hidden;}
+#side-panel.open{transform:translateX(0);}
+#panel-header{padding:52px 20px 14px;border-bottom:1px solid rgba(60,90,160,0.13);}
+#panel-header h2{font-size:13px;font-weight:500;color:rgba(160,190,255,0.75);letter-spacing:.08em;text-transform:uppercase;}
+#panel-body{flex:1;overflow-y:auto;padding:14px 20px 24px;}
+#panel-body::-webkit-scrollbar{width:3px;}
+#panel-body::-webkit-scrollbar-thumb{background:rgba(80,120,255,0.18);border-radius:2px;}
+.section-title{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:rgba(120,150,220,0.4);margin:18px 0 11px;padding-bottom:5px;border-bottom:1px solid rgba(60,90,160,0.1);}
+.section-title:first-child{margin-top:0;}
+.ctrl-row{margin-bottom:13px;}
+.ctrl-label{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;}
+.ctrl-name{font-size:12px;color:rgba(180,200,240,0.72);}
+.ctrl-val{font-size:11px;color:rgba(100,150,255,0.8);font-variant-numeric:tabular-nums;min-width:34px;text-align:right;}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:2px;background:rgba(80,120,255,0.13);outline:none;cursor:pointer;}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#3366ee;border:2px solid rgba(100,160,255,0.45);cursor:pointer;transition:transform .15s;}
+input[type=range]::-webkit-slider-thumb:hover{background:#4488ff;transform:scale(1.15);}
+.toggle-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:13px;}
+.toggle-name{font-size:12px;color:rgba(180,200,240,0.72);}
+.toggle{position:relative;width:34px;height:18px;}
+.toggle input{opacity:0;width:0;height:0;position:absolute;}
+.toggle-slider{position:absolute;inset:0;background:rgba(60,80,140,0.2);border-radius:9px;cursor:pointer;transition:background .2s;border:1px solid rgba(80,120,255,0.18);}
+.toggle-slider:before{content:'';position:absolute;width:12px;height:12px;left:2px;top:2px;background:rgba(160,180,220,0.45);border-radius:50%;transition:transform .2s,background .2s;}
+.toggle input:checked+.toggle-slider{background:rgba(40,100,255,0.32);}
+.toggle input:checked+.toggle-slider:before{transform:translateX(16px);background:#4488ff;}
+.reset-btn{width:100%;margin-top:6px;padding:9px;border:1px solid rgba(80,120,255,0.22);border-radius:7px;background:rgba(25,55,150,0.12);color:rgba(160,190,255,0.7);font-size:12px;cursor:pointer;font-family:inherit;letter-spacing:.04em;transition:all .2s;}
+.reset-btn:hover{background:rgba(35,75,190,0.22);color:rgba(200,220,255,0.9);}
+
+/* Query bar */
+#query-area{padding:12px 18px 16px;background:rgba(6,10,20,0.97);border-top:1px solid rgba(60,90,160,0.15);display:flex;gap:10px;align-items:center;}
+#query-input{flex:1;background:rgba(255,255,255,0.04);border:1px solid rgba(80,120,255,0.2);border-radius:8px;padding:10px 14px;color:#e2e8f4;font-size:14px;font-family:inherit;outline:none;transition:border-color .2s;}
+#query-input::placeholder{color:rgba(160,180,220,0.25);}
+#query-input:focus{border-color:rgba(80,140,255,0.52);}
+#send-btn{background:rgba(38,98,255,0.72);border:none;border-radius:8px;padding:10px 18px;color:#fff;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;letter-spacing:.03em;transition:background .2s,transform .1s;white-space:nowrap;}
+#send-btn:hover{background:rgba(55,125,255,0.92);}
+#send-btn:active{transform:scale(.97);}
+</style>
+</head>
+<body>
+<div id="canvas-container">
+  <canvas id="graph-canvas"></canvas>
+  <div id="hud-top">Layered Knowledge Graph Explorer</div>
+  <div id="status-line"><span class="pulse"></span><span id="status-text">Ready</span></div>
+
+  <!-- Layer legend -->
+  <div id="layer-legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#ff6644;"></div>Layer 3 — 最上位概念</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#44aaff;"></div>Layer 2 — 上位概念</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#aa44ff;"></div>Layer 1 — 中間概念・手法</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#44ffaa;"></div>Layer 0 — 具体技術・実装</div>
+  </div>
+
+  <div id="controls-hint">
+    左ドラッグ: 回転 | Shift+ドラッグ: パン | スクロール: ズーム<br>
+    右ドラッグ: パン | ノードドラッグ: XY移動
+  </div>
+
+  <div id="node-tooltip">
+    <div class="tooltip-card">
+      <div class="tooltip-layer" id="tt-layer"></div>
+      <div class="tooltip-type" id="tt-type"></div>
+      <div class="tooltip-label" id="tt-label"></div>
+      <div class="tooltip-desc" id="tt-desc"></div>
+      <div class="tooltip-score">
+        <div class="score-bar-wrap"><div class="score-bar" id="tt-bar" style="width:0%"></div></div>
+        <div class="score-num" id="tt-score">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="hamburger"><span></span><span></span><span></span></div>
+
+  <div id="side-panel">
+    <div id="panel-header"><h2>グラフ設定</h2></div>
+    <div id="panel-body">
+      <div class="section-title">物理 (XY平面)</div>
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span class="ctrl-name">引力（中心引き）</span><span class="ctrl-val" id="v-gravity">0.06</span></div>
+        <input type="range" id="s-gravity" min="0" max="0.4" step="0.01" value="0.06">
+      </div>
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span class="ctrl-name">斥力（ノード間反発）</span><span class="ctrl-val" id="v-repulse">2.0</span></div>
+        <input type="range" id="s-repulse" min="0" max="8" step="0.1" value="2.0">
+      </div>
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span class="ctrl-name">リンク強度</span><span class="ctrl-val" id="v-link">0.035</span></div>
+        <input type="range" id="s-link" min="0" max="0.25" step="0.005" value="0.035">
+      </div>
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span class="ctrl-name">リンク距離</span><span class="ctrl-val" id="v-linkdist">3.5</span></div>
+        <input type="range" id="s-linkdist" min="0.5" max="9" step="0.1" value="3.5">
+      </div>
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span class="ctrl-name">慣性（減衰）</span><span class="ctrl-val" id="v-damping">0.86</span></div>
+        <input type="range" id="s-damping" min="0.5" max="0.99" step="0.01" value="0.86">
+      </div>
+      <div class="section-title">レイヤー</div>
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span class="ctrl-name">レイヤー間隔</span><span class="ctrl-val" id="v-layergap">4.5</span></div>
+        <input type="range" id="s-layergap" min="2" max="10" step="0.5" value="4.5">
+      </div>
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span class="ctrl-name">雲の大きさ</span><span class="ctrl-val" id="v-cloudsize">1.00</span></div>
+        <input type="range" id="s-cloudsize" min="0.3" max="2.5" step="0.05" value="1.0">
+      </div>
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span class="ctrl-name">雲の透明度</span><span class="ctrl-val" id="v-cloudalpha">0.12</span></div>
+        <input type="range" id="s-cloudalpha" min="0" max="0.5" step="0.01" value="0.12">
+      </div>
+      <div class="section-title">表示</div>
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span class="ctrl-name">ノードサイズ</span><span class="ctrl-val" id="v-nodesize">1.00</span></div>
+        <input type="range" id="s-nodesize" min="0.3" max="2.5" step="0.05" value="1.0">
+      </div>
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span class="ctrl-name">エッジ透明度</span><span class="ctrl-val" id="v-edgealpha">0.45</span></div>
+        <input type="range" id="s-edgealpha" min="0" max="1" step="0.05" value="0.45">
+      </div>
+      <div class="section-title">カメラ</div>
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span class="ctrl-name">自動回転速度</span><span class="ctrl-val" id="v-autorot">0.00</span></div>
+        <input type="range" id="s-autorot" min="0" max="0.5" step="0.01" value="0.0">
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-name">物理を一時停止</span>
+        <label class="toggle"><input type="checkbox" id="t-freeze"><span class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-name">ラベル表示</span>
+        <label class="toggle"><input type="checkbox" id="t-labels" checked><span class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-name">レイヤー雲を表示</span>
+        <label class="toggle"><input type="checkbox" id="t-clouds" checked><span class="toggle-slider"></span></label>
+      </div>
+      <button class="reset-btn" id="btn-reset">設定をリセット</button>
+    </div>
+  </div>
+</div>
+
+<div id="query-area">
+  <input id="query-input" type="text" placeholder="クエリを入力（例：機械学習、データベース、LLM...）"/>
+  <button id="send-btn">検索 →</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════
+// LAYER DEFINITIONS
+// Layer 0: 具体技術・実装  (Z = 0)     color: #44ffaa (teal-green)
+// Layer 1: 中間概念・手法  (Z = 4.5)   color: #aa44ff (purple)
+// Layer 2: 上位概念        (Z = 9.0)   color: #44aaff (blue)
+// Layer 3: 最上位抽象      (Z = 13.5)  color: #ff6644 (coral)
+// ═══════════════════════════════════════════════════════════════
+
+const LAYER_COLORS = [
+  { r:0.26, g:1.00, b:0.67 },  // L0: teal-green
+  { r:0.67, g:0.26, b:1.00 },  // L1: purple
+  { r:0.26, g:0.67, b:1.00 },  // L2: blue
+  { r:1.00, g:0.40, b:0.26 },  // L3: coral
+];
+const LAYER_NAMES = ['具体技術・実装','中間概念・手法','上位概念','最上位抽象'];
+
+// ── NODE DATA (each node has a 'layer' field 0-3) ──────────────
+const NODES_RAW = [
+  // Layer 0: 具体技術・実装
+  { id:0,  layer:0, label:'SQL',            type:'言語',   desc:'リレーショナルDBへのクエリ言語' },
+  { id:1,  layer:0, label:'BERT',           type:'モデル', desc:'双方向Transformerを使った事前学習モデル' },
+  { id:2,  layer:0, label:'GPT',            type:'モデル', desc:'大規模言語生成モデルのシリーズ' },
+  { id:3,  layer:0, label:'ファインチューン', type:'技術', desc:'事前学習モデルを特定タスク向けに追加学習する手法' },
+  { id:4,  layer:0, label:'エンティティ',   type:'概念',   desc:'知識グラフ上の基本単位となる概念・モノ' },
+  { id:5,  layer:0, label:'Word2Vec',       type:'モデル', desc:'単語をベクトル空間に写像する古典的な手法' },
+  { id:6,  layer:0, label:'FAISS',          type:'ライブラリ', desc:'高速近傍探索のFacebook製ライブラリ' },
+
+  // Layer 1: 中間概念・手法
+  { id:7,  layer:1, label:'埋め込み',       type:'技術',         desc:'テキストや概念を高次元ベクトルに変換する手法' },
+  { id:8,  layer:1, label:'類似度検索',     type:'アルゴリズム', desc:'ベクトル空間上で近傍要素を見つける手法' },
+  { id:9,  layer:1, label:'アテンション',   type:'技術',         desc:'入力の重要部分に集中するメカニズム' },
+  { id:10, layer:1, label:'Transformer',    type:'アーキテクチャ', desc:'Attention機構を核とした革命的なモデル構造' },
+  { id:11, layer:1, label:'RAG',            type:'技術',         desc:'検索拡張生成：外部知識を参照しながら回答を生成' },
+  { id:12, layer:1, label:'グラフ探索',     type:'アルゴリズム', desc:'グラフ上のノード間の経路を効率的に探索する手法' },
+
+  // Layer 2: 上位概念
+  { id:13, layer:2, label:'機械学習',       type:'概念', desc:'統計的手法でデータからパターンを学習する技術' },
+  { id:14, layer:2, label:'自然言語処理',   type:'概念', desc:'テキストデータを理解・生成する技術分野' },
+  { id:15, layer:2, label:'データベース',   type:'概念', desc:'構造化データを管理するシステム' },
+  { id:16, layer:2, label:'知識グラフ',     type:'概念', desc:'エンティティと関係をグラフ構造で表現したナレッジベース' },
+  { id:17, layer:2, label:'深層学習',       type:'概念', desc:'多層ニューラルネットワークを用いた機械学習手法' },
+  { id:18, layer:2, label:'ベクトルDB',     type:'技術', desc:'高次元ベクトルを高速検索するデータストア' },
+
+  // Layer 3: 最上位抽象
+  { id:19, layer:3, label:'LLM',            type:'概念', desc:'大規模言語モデル。大量テキストで学習した汎用AIモデル' },
+  { id:20, layer:3, label:'推論',           type:'概念', desc:'論理的な結論を導き出すプロセス' },
+  { id:21, layer:3, label:'AI',             type:'概念', desc:'知能を機械で再現する学問・技術の総称' },
+];
+
+// ── EDGES (隣接レイヤーのみ接続可能) ──────────────────────────
+// L0→L1
+const EDGES_RAW = [
+  [0,15],   // SQL → データベース(L2)... wait, must be adjacent layer
+  // L0(具体) → L1(中間)
+  [0, 8],   // SQL → 類似度検索
+  [1, 9],   // BERT → アテンション
+  [1,10],   // BERT → Transformer
+  [2, 9],   // GPT → アテンション
+  [2,10],   // GPT → Transformer
+  [3, 9],   // ファインチューン → アテンション
+  [4,12],   // エンティティ → グラフ探索
+  [5, 7],   // Word2Vec → 埋め込み
+  [6, 8],   // FAISS → 類似度検索
+  [6, 7],   // FAISS → 埋め込み
+  // L1(中間) → L2(上位)
+  [7,13],   // 埋め込み → 機械学習
+  [7,14],   // 埋め込み → 自然言語処理
+  [7,18],   // 埋め込み → ベクトルDB
+  [8,18],   // 類似度検索 → ベクトルDB
+  [8,16],   // 類似度検索 → 知識グラフ
+  [9,13],   // アテンション → 機械学習
+  [9,14],   // アテンション → 自然言語処理
+  [10,13],  // Transformer → 機械学習
+  [10,17],  // Transformer → 深層学習
+  [11,14],  // RAG → 自然言語処理
+  [11,18],  // RAG → ベクトルDB
+  [11,16],  // RAG → 知識グラフ
+  [12,15],  // グラフ探索 → データベース
+  [12,16],  // グラフ探索 → 知識グラフ
+  // L2(上位) → L3(最上位)
+  [13,19],  // 機械学習 → LLM
+  [13,21],  // 機械学習 → AI
+  [14,19],  // 自然言語処理 → LLM
+  [15,21],  // データベース → AI
+  [16,20],  // 知識グラフ → 推論
+  [16,21],  // 知識グラフ → AI
+  [17,19],  // 深層学習 → LLM
+  [17,21],  // 深層学習 → AI
+  [18,20],  // ベクトルDB → 推論
+  [19,20],  // LLM → 推論 (same layer, OK)
+];
+
+const N = NODES_RAW.length;
+const NUM_LAYERS = 4;
+
+// ── PHYSICS STATE (XY only) ────────────────────────────────────
+const posXY = NODES_RAW.map(() => ({
+  x: (Math.random() - 0.5) * 6,
+  y: (Math.random() - 0.5) * 6,
+}));
+const velXY = NODES_RAW.map(() => ({ x: 0, y: 0 }));
+
+const P = {
+  gravity:   0.06,
+  repulse:   2.0,
+  link:      0.035,
+  linkdist:  3.5,
+  damping:   0.86,
+  nodesize:  1.0,
+  edgealpha: 0.45,
+  autorot:   0.0,
+  layergap:  4.5,
+  cloudsize: 1.0,
+  cloudalpha:0.12,
+  freeze:    false,
+  labels:    true,
+  clouds:    true,
+};
+const DEFAULTS = {gravity:0.06,repulse:2.0,link:0.035,linkdist:3.5,damping:0.86,nodesize:1.0,edgealpha:0.45,autorot:0.0,layergap:4.5,cloudsize:1.0,cloudalpha:0.12};
+
+// 3D position = (XY from physics, Z from layer * layergap)
+function getPos3(i) {
+  return new THREE.Vector3(posXY[i].x, posXY[i].y, NODES_RAW[i].layer * P.layergap);
+}
+
+// ── THREE.JS SETUP ─────────────────────────────────────────────
+const canvas  = document.getElementById('graph-canvas');
+const cont    = document.getElementById('canvas-container');
+const W = () => cont.clientWidth, H = () => cont.clientHeight;
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(W(), H());
+renderer.setClearColor(0x060a12, 1);
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(48, W() / H(), 0.1, 500);
+camera.position.set(0, -8, 22);
+
+// Lights
+scene.add(new THREE.AmbientLight(0x1a2244, 1.8));
+const pL1 = new THREE.PointLight(0x4488ff, 3, 80); pL1.position.set(5, 8, 20); scene.add(pL1);
+const pL2 = new THREE.PointLight(0xff6644, 1.5, 60); pL2.position.set(-6, -4, 0); scene.add(pL2);
+
+// Pivot for orbit
+const pivot = new THREE.Object3D();
+// Tilt pivot so all layers are visible initially
+pivot.rotation.x = 0.55; // look slightly from above-front
+scene.add(pivot);
+
+// ── NODE MESHES ────────────────────────────────────────────────
+const sphereGeo  = new THREE.SphereGeometry(0.16, 24, 16);
+const nodeMeshes = [];
+const glowState  = new Array(N).fill(0);
+
+NODES_RAW.forEach((n, i) => {
+  const lc = LAYER_COLORS[n.layer];
+  const mat = new THREE.MeshStandardMaterial({
+    color:    new THREE.Color(lc.r * 0.28, lc.g * 0.28, lc.b * 0.28),
+    emissive: new THREE.Color(lc.r * 0.08, lc.g * 0.08, lc.b * 0.08),
+    roughness: 0.3, metalness: 0.6,
+  });
+  const mesh = new THREE.Mesh(sphereGeo, mat);
+  mesh.userData.nodeIndex = i;
+  const p = getPos3(i); mesh.position.copy(p);
+  pivot.add(mesh);
+  nodeMeshes.push(mesh);
+});
+
+// ── EDGE LINES ─────────────────────────────────────────────────
+const edgeLines = [];
+EDGES_RAW.forEach(([a, b]) => {
+  const geo = new THREE.BufferGeometry();
+  const buf = new Float32Array(6);
+  geo.setAttribute('position', new THREE.BufferAttribute(buf, 3));
+  const mat = new THREE.LineBasicMaterial({ color: 0x1a2540, transparent: true, opacity: P.edgealpha });
+  const l = new THREE.Line(geo, mat);
+  l.userData.na = a; l.userData.nb = b;
+  pivot.add(l);
+  edgeLines.push(l);
+});
+
+function syncEdges() {
+  edgeLines.forEach(l => {
+    const buf = l.geometry.attributes.position.array;
+    const pa = nodeMeshes[l.userData.na].position;
+    const pb = nodeMeshes[l.userData.nb].position;
+    buf[0]=pa.x;buf[1]=pa.y;buf[2]=pa.z;
+    buf[3]=pb.x;buf[4]=pb.y;buf[5]=pb.z;
+    l.geometry.attributes.position.needsUpdate = true;
+  });
+}
+
+// ── LAYER CLOUD (soft blob per layer) ─────────────────────────
+// Each layer cloud: a collection of SphereGeometry instances blended via AdditiveBlending
+// We use a single large transparent sphere centered on the layer's node centroid
+const cloudMeshes = [];
+const cloudGeo = new THREE.SphereGeometry(1, 16, 12);
+
+for (let layer = 0; layer < NUM_LAYERS; layer++) {
+  const lc = LAYER_COLORS[layer];
+  const mat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(lc.r, lc.g, lc.b),
+    transparent: true,
+    opacity: P.cloudalpha,
+    side: THREE.BackSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  // We'll create multiple overlapping spheres for a "cloud" look
+  const group = new THREE.Group();
+  const offsets = [
+    [0,0,0],[1.5,0.8,0],[-1.2,1.0,0],[0.8,-1.4,0],[-1.6,-0.6,0],[0.3,1.8,0],[-0.5,-1.8,0],[2.0,-0.4,0],[-2.2,0.2,0]
+  ];
+  offsets.forEach(([ox,oy]) => {
+    const m = new THREE.Mesh(cloudGeo, mat.clone());
+    m.position.set(ox, oy, 0);
+    m.scale.setScalar(1.8 + Math.random() * 0.8);
+    group.add(m);
+  });
+  group.userData.layer = layer;
+  pivot.add(group);
+  cloudMeshes.push(group);
+}
+
+function updateClouds() {
+  for (let layer = 0; layer < NUM_LAYERS; layer++) {
+    // Compute centroid of nodes in this layer
+    const layerNodes = NODES_RAW.map((n,i) => n.layer === layer ? i : -1).filter(i => i >= 0);
+    let cx = 0, cy = 0;
+    layerNodes.forEach(i => { cx += posXY[i].x; cy += posXY[i].y; });
+    cx /= layerNodes.length; cy /= layerNodes.length;
+
+    // Compute spread (radius)
+    let maxR = 0;
+    layerNodes.forEach(i => {
+      const dx = posXY[i].x - cx, dy = posXY[i].y - cy;
+      const r = Math.sqrt(dx*dx + dy*dy);
+      if (r > maxR) maxR = r;
+    });
+    maxR = Math.max(maxR, 2.0);
+
+    const group = cloudMeshes[layer];
+    group.position.set(cx, cy, layer * P.layergap);
+
+    const s = P.cloudsize * (maxR / 3.5);
+    group.scale.set(s, s, 0.18); // flat on XY plane
+    group.children.forEach(m => {
+      m.material.opacity = P.clouds ? P.cloudalpha : 0;
+    });
+  }
+}
+
+// ── LABELS ────────────────────────────────────────────────────
+const labelSprites = [];
+function mkLabel(text, layer) {
+  const lc = LAYER_COLORS[layer];
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 56;
+  const ctx = c.getContext('2d');
+  ctx.font = '500 20px -apple-system, sans-serif';
+  const alpha = 0.85;
+  ctx.fillStyle = `rgba(${Math.round(lc.r*180+70)},${Math.round(lc.g*180+70)},${Math.round(lc.b*180+70)},${alpha})`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 128, 28);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false }));
+  sp.scale.set(1.7, 0.42, 1);
+  return sp;
+}
+NODES_RAW.forEach((n, i) => {
+  const sp = mkLabel(n.label, n.layer);
+  pivot.add(sp);
+  labelSprites.push(sp);
+});
+
+// ── GLOW ──────────────────────────────────────────────────────
+function setGlow(i, intensity) {
+  const lc = LAYER_COLORS[NODES_RAW[i].layer];
+  const fi = Math.pow(Math.max(0, Math.min(1, intensity)), 0.65);
+  const m = nodeMeshes[i].material;
+  m.color.setRGB(lc.r*(0.22+fi*.78), lc.g*(0.22+fi*.78), lc.b*(0.22+fi*.78));
+  m.emissive.setRGB(lc.r*fi*.9, lc.g*fi*.9, lc.b*fi*.9);
+  m.emissiveIntensity = fi * 3.2;
+  glowState[i] = fi;
+}
+function resetGlow() {
+  for (let i = 0; i < N; i++) setGlow(i, 0);
+  edgeLines.forEach(l => { l.material.color.set(0x1a2540); l.material.opacity = P.edgealpha; });
+}
+
+// ── PHYSICS (XY only per layer) ────────────────────────────────
+function physStep() {
+  if (P.freeze) return;
+  const accX = new Array(N).fill(0), accY = new Array(N).fill(0);
+
+  // Gravity toward layer centroid origin (XY only)
+  for (let i = 0; i < N; i++) {
+    accX[i] -= posXY[i].x * P.gravity;
+    accY[i] -= posXY[i].y * P.gravity;
+  }
+
+  // Repulsion (only between nodes on the same layer)
+  for (let i = 0; i < N; i++) {
+    for (let j = i + 1; j < N; j++) {
+      if (NODES_RAW[i].layer !== NODES_RAW[j].layer) continue;
+      const dx = posXY[i].x - posXY[j].x;
+      const dy = posXY[i].y - posXY[j].y;
+      const d2 = Math.max(dx*dx + dy*dy, 0.2);
+      const d  = Math.sqrt(d2);
+      const f  = P.repulse / d2;
+      const nx = dx / d, ny = dy / d;
+      accX[i] += nx * f; accY[i] += ny * f;
+      accX[j] -= nx * f; accY[j] -= ny * f;
+    }
+  }
+
+  // Link springs (XY projection only; cross-layer edges still apply XY force)
+  EDGES_RAW.forEach(([a, b]) => {
+    const dx = posXY[b].x - posXY[a].x;
+    const dy = posXY[b].y - posXY[a].y;
+    const d  = Math.max(Math.sqrt(dx*dx + dy*dy), 0.01);
+    const err = (d - P.linkdist) * P.link;
+    const nx = dx / d, ny = dy / d;
+    accX[a] += nx * err; accY[a] += ny * err;
+    accX[b] -= nx * err; accY[b] -= ny * err;
+  });
+
+  // Integrate
+  for (let i = 0; i < N; i++) {
+    if (draggedNode === i) continue;
+    velXY[i].x = (velXY[i].x + accX[i]) * P.damping;
+    velXY[i].y = (velXY[i].y + accY[i]) * P.damping;
+    posXY[i].x += velXY[i].x;
+    posXY[i].y += velXY[i].y;
+  }
+}
+
+// ── CAMERA ORBIT ──────────────────────────────────────────────
+let rotX = 0.55, rotY = -0.25, panX = 0, panY = 0, zoom = 22;
+let rotVX = 0, rotVY = 0;
+function applyCamera() {
+  pivot.rotation.x = rotX; pivot.rotation.y = rotY;
+  camera.position.x = panX; camera.position.y = panY; camera.position.z = zoom;
+  camera.lookAt(panX, panY, 0);
+}
+applyCamera();
+
+// ── INTERACTION ───────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let isDragging = false, isRight = false, isShift = false;
+let lastX = 0, lastY = 0;
+let hoveredNode = -1, draggedNode = -1;
+const dragPlane = new THREE.Plane();
+const dragOffset = new THREE.Vector3(), dragPoint = new THREE.Vector3();
+
+function getMouse(e) {
+  const r = canvas.getBoundingClientRect();
+  mouse.x = ((e.clientX - r.left) / r.width) * 2 - 1;
+  mouse.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+}
+function getHits() {
+  raycaster.setFromCamera(mouse, camera);
+  return raycaster.intersectObjects(nodeMeshes);
+}
+
+cont.addEventListener('mousedown', e => {
+  getMouse(e);
+  if (e.button === 0 && !e.shiftKey) {
+    const hits = getHits();
+    if (hits.length > 0) {
+      draggedNode = hits[0].object.userData.nodeIndex;
+      velXY[draggedNode].x = 0; velXY[draggedNode].y = 0;
+      // Drag plane: XY plane at node's Z
+      const nz = NODES_RAW[draggedNode].layer * P.layergap;
+      const camDir = camera.getWorldDirection(new THREE.Vector3()).negate();
+      // Use Z-normal plane through node position
+      dragPlane.set(new THREE.Vector3(0,0,1).applyQuaternion(pivot.quaternion), 0);
+      const worldPos = nodeMeshes[draggedNode].position.clone().applyMatrix4(pivot.matrixWorld);
+      dragPlane.setFromNormalAndCoplanarPoint(camDir, worldPos);
+      raycaster.ray.intersectPlane(dragPlane, dragPoint);
+      dragOffset.subVectors(worldPos, dragPoint);
+      cont.style.cursor = 'grabbing';
+      return;
+    }
+  }
+  isDragging = true; isRight = e.button === 2; isShift = e.shiftKey;
+  lastX = e.clientX; lastY = e.clientY; rotVX = 0; rotVY = 0;
+});
+
+window.addEventListener('mouseup', () => {
+  draggedNode = -1;
+  isDragging = false;
+  cont.style.cursor = 'grab';
+});
+
+window.addEventListener('mousemove', e => {
+  getMouse(e);
+  const r = canvas.getBoundingClientRect();
+
+  if (draggedNode >= 0) {
+    raycaster.setFromCamera(mouse, camera);
+    raycaster.ray.intersectPlane(dragPlane, dragPoint);
+    const wp = dragPoint.clone().add(dragOffset);
+    const inv = new THREE.Matrix4().copy(pivot.matrixWorld).invert();
+    wp.applyMatrix4(inv);
+    // Only update XY, keep Z locked to layer
+    velXY[draggedNode].x = (wp.x - posXY[draggedNode].x) * 0.4;
+    velXY[draggedNode].y = (wp.y - posXY[draggedNode].y) * 0.4;
+    posXY[draggedNode].x = wp.x;
+    posXY[draggedNode].y = wp.y;
+    return;
+  }
+
+  if (isDragging) {
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    if (isRight || isShift) { panX -= dx * 0.013; panY += dy * 0.013; }
+    else { rotVY = dx * 0.007; rotVX = dy * 0.007; rotY += rotVY; rotX += rotVX; }
+    lastX = e.clientX; lastY = e.clientY;
+    applyCamera(); return;
+  }
+
+  // Hover
+  const hits = getHits();
+  if (hits.length > 0) {
+    const idx = hits[0].object.userData.nodeIndex;
+    if (idx !== hoveredNode) {
+      hoveredNode = idx;
+      const n = NODES_RAW[idx];
+      const lc = LAYER_COLORS[n.layer];
+      document.getElementById('tt-layer').textContent = `Layer ${n.layer}  —  ${LAYER_NAMES[n.layer]}`;
+      document.getElementById('tt-layer').style.color = `rgb(${Math.round(lc.r*200+55)},${Math.round(lc.g*200+55)},${Math.round(lc.b*200+55)})`;
+      document.getElementById('tt-type').textContent  = n.type;
+      document.getElementById('tt-label').textContent = n.label;
+      document.getElementById('tt-desc').textContent  = n.desc;
+      const pct = Math.round(glowState[idx] * 100);
+      document.getElementById('tt-bar').style.width   = pct + '%';
+      document.getElementById('tt-score').textContent = pct > 0 ? pct + '%' : '—';
+    }
+    const tt = document.getElementById('node-tooltip');
+    tt.style.display = 'block';
+    tt.style.left = (e.clientX - r.left + 16) + 'px';
+    tt.style.top  = (e.clientY - r.top  - 12) + 'px';
+    cont.style.cursor = 'pointer';
+  } else {
+    hoveredNode = -1;
+    document.getElementById('node-tooltip').style.display = 'none';
+    cont.style.cursor = isDragging ? 'grabbing' : 'grab';
+  }
+});
+
+cont.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoom = Math.max(5, Math.min(50, zoom + e.deltaY * 0.025));
+  applyCamera();
+}, { passive: false });
+cont.addEventListener('contextmenu', e => e.preventDefault());
+
+// ── SIDE PANEL ────────────────────────────────────────────────
+document.getElementById('hamburger').addEventListener('click', function () {
+  this.classList.toggle('open');
+  document.getElementById('side-panel').classList.toggle('open');
+});
+
+function bindSlider(sid, vid, key, dec) {
+  const sl = document.getElementById(sid), vl = document.getElementById(vid);
+  sl.addEventListener('input', () => {
+    P[key] = parseFloat(sl.value);
+    vl.textContent = P[key].toFixed(dec !== undefined ? dec : 2);
+    if (key === 'nodesize') nodeMeshes.forEach((m, i) => m.scale.setScalar(P.nodesize * (1 + glowState[i] * 0.55)));
+    if (key === 'edgealpha') edgeLines.forEach(l => { l.material.opacity = P.edgealpha; });
+    if (key === 'layergap') rebuildLayerZ();
+  });
+}
+
+function rebuildLayerZ() {
+  // Sync cloud Z positions when layergap changes
+  cloudMeshes.forEach((g, layer) => {
+    g.position.z = layer * P.layergap;
+  });
+}
+
+bindSlider('s-gravity',   'v-gravity',   'gravity',   2);
+bindSlider('s-repulse',   'v-repulse',   'repulse',   1);
+bindSlider('s-link',      'v-link',      'link',      3);
+bindSlider('s-linkdist',  'v-linkdist',  'linkdist',  1);
+bindSlider('s-damping',   'v-damping',   'damping',   2);
+bindSlider('s-layergap',  'v-layergap',  'layergap',  1);
+bindSlider('s-cloudsize', 'v-cloudsize', 'cloudsize', 2);
+bindSlider('s-cloudalpha','v-cloudalpha','cloudalpha',2);
+bindSlider('s-nodesize',  'v-nodesize',  'nodesize',  2);
+bindSlider('s-edgealpha', 'v-edgealpha', 'edgealpha', 2);
+bindSlider('s-autorot',   'v-autorot',   'autorot',   2);
+
+document.getElementById('t-freeze').addEventListener('change', function () { P.freeze = this.checked; });
+document.getElementById('t-labels').addEventListener('change', function () {
+  P.labels = this.checked;
+  labelSprites.forEach(s => { s.visible = P.labels; });
+});
+document.getElementById('t-clouds').addEventListener('change', function () {
+  P.clouds = this.checked;
+  cloudMeshes.forEach(g => g.children.forEach(m => { m.material.opacity = P.clouds ? P.cloudalpha : 0; }));
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  Object.assign(P, DEFAULTS);
+  const decs = { gravity:2,repulse:1,link:3,linkdist:1,damping:2,layergap:1,cloudsize:2,cloudalpha:2,nodesize:2,edgealpha:2,autorot:2 };
+  Object.keys(DEFAULTS).forEach(k => {
+    const sl = document.getElementById('s-' + k);
+    const vl = document.getElementById('v-' + k);
+    if (sl) sl.value = DEFAULTS[k];
+    if (vl) vl.textContent = DEFAULTS[k].toFixed(decs[k] || 2);
+  });
+  nodeMeshes.forEach(m => m.scale.setScalar(1.0));
+  edgeLines.forEach(l => { l.material.opacity = 0.45; l.material.color.set(0x1a2540); });
+});
+
+// ── QUERY ─────────────────────────────────────────────────────
+function simulateQuery(query) {
+  resetGlow();
+  document.getElementById('status-text').textContent = '検索中...';
+  setTimeout(() => {
+    const q = query.toLowerCase();
+    const words = q.split(/[\s、,　]+/).filter(w => w.length > 0);
+    const scores = NODES_RAW.map(n => {
+      const text = (n.label + n.type + n.desc).toLowerCase();
+      let s = 0;
+      words.forEach(w => {
+        if (n.label.toLowerCase().includes(w)) s += 1.0;
+        else if (text.includes(w)) s += 0.4;
+      });
+      return s || Math.random() * 0.07;
+    });
+    const maxS = Math.max(...scores);
+    const hopGlow = scores.map(s => s / maxS);
+
+    const hits = hopGlow.map((s, i) => ({ i, s })).filter(x => x.s > 0.28).slice(0, 6);
+    hits.forEach(({ i }) => {
+      EDGES_RAW.forEach(([a, b]) => {
+        const nb = a === i ? b : b === i ? a : -1;
+        if (nb < 0) return;
+        const h1 = hopGlow[i] * 0.52;
+        if (h1 > hopGlow[nb]) hopGlow[nb] = h1;
+        EDGES_RAW.forEach(([c, d]) => {
+          const nb2 = c === nb ? d : d === nb ? c : -1;
+          if (nb2 >= 0 && hopGlow[nb] * 0.5 > hopGlow[nb2]) hopGlow[nb2] = hopGlow[nb] * 0.5;
+        });
+      });
+    });
+
+    for (let i = 0; i < N; i++) setGlow(i, hopGlow[i]);
+
+    edgeLines.forEach(l => {
+      const ga = glowState[l.userData.na], gb = glowState[l.userData.nb];
+      const eg = Math.max(ga, gb);
+      if (eg > 0.1) {
+        l.material.color.setRGB(0.1 + eg * 0.35, 0.3 + eg * 0.42, 0.65 + eg * 0.35);
+        l.material.opacity = Math.min(P.edgealpha + eg * 0.55, 1.0);
+      }
+    });
+
+    document.getElementById('status-text').textContent = hits.length + ' ノードがヒット';
+  }, 260);
+}
+
+document.getElementById('send-btn').addEventListener('click', () => {
+  const q = document.getElementById('query-input').value.trim();
+  if (q) simulateQuery(q);
+});
+document.getElementById('query-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('send-btn').click();
+});
+
+// ── ANIMATE ───────────────────────────────────────────────────
+let frameT = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  frameT += 0.004;
+  pL1.position.x = Math.sin(frameT * 0.5) * 8;
+  pL1.position.y = Math.cos(frameT * 0.35) * 6 + 4;
+
+  physStep();
+
+  // Sync mesh positions
+  for (let i = 0; i < N; i++) {
+    const z = NODES_RAW[i].layer * P.layergap;
+    nodeMeshes[i].position.set(posXY[i].x, posXY[i].y, z);
+    nodeMeshes[i].scale.setScalar(P.nodesize * (1 + glowState[i] * 0.55));
+    if (P.labels) {
+      labelSprites[i].position.set(posXY[i].x, posXY[i].y + 0.38 + glowState[i] * 0.1, z);
+    }
+  }
+
+  syncEdges();
+  updateClouds();
+
+  // Camera inertia
+  if (!isDragging && draggedNode < 0) {
+    rotVX *= 0.91; rotVY *= 0.91;
+    rotX += rotVX; rotY += rotVY;
+  }
+  rotY += P.autorot * 0.008;
+  applyCamera();
+
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  renderer.setSize(W(), H());
+  camera.aspect = W() / H();
+  camera.updateProjectionMatrix();
+});
+
+// Boot
+simulateQuery('機械学習 知識グラフ');
+</script>
+</body>
+</html>
